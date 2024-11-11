@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, Copy)]
+/// A color with red, green, blue, and alpha components.
 pub struct RGBA {
     pub r: f32,
     pub g: f32,

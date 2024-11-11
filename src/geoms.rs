@@ -1,31 +1,29 @@
-use std::sync::Arc;
-
 use super::affine::Affine;
 use super::brushes::{Brush, Image};
 pub use super::scenes::Scene;
 use super::shapes::{Point, Rectangle, Shape};
-use super::styles::{CompositeMode, FillStyle, ImageFitMode, MixMode, Style};
+use super::styles::{FillStyle, ImageFitMode, Style};
 
 // A geometric object that can be rendered, consisting of a shape and a brush.
 #[derive(Debug, Clone)]
-pub struct Geom<S: Shape, T> {
+pub struct Geom<S: Shape> {
     pub style: Style,
     pub shape: S,
-    pub brush: Brush<T>,
+    pub brush: Brush,
     pub transform: Affine,
     pub brush_transform: Option<Affine>,
 }
 
-pub trait GeomTrait<T> {
+pub trait GeomTrait {
     fn new_image(
-        image: Image<T>,
+        image: Image,
         x: f64,
         y: f64,
         width: f64,
         height: f64,
         transform: Affine,
         fit_mode: ImageFitMode,
-    ) -> Geom<Rectangle, T> {
+    ) -> Geom<Rectangle> {
         let shape = Rectangle {
             a: Point {
                 x: x - width / 2.0,
@@ -40,7 +38,7 @@ pub trait GeomTrait<T> {
         let org_width = image.width as f64;
         let org_height = image.height as f64;
 
-        let brush = Brush::Texture(Arc::new(image));
+        let brush = Brush::Image(image);
 
         let brush_transform = match fit_mode {
             ImageFitMode::Original => None,
@@ -61,4 +59,4 @@ pub trait GeomTrait<T> {
     }
 }
 
-impl<T> GeomTrait<T> for Geom<Rectangle, T> {}
+impl GeomTrait for Geom<Rectangle> {}

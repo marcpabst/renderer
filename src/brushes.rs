@@ -3,16 +3,26 @@ use std::sync::Arc;
 use super::{colors::RGBA, shapes::Point};
 
 #[derive(Debug, Clone)]
-pub enum Brush<T> {
+pub enum Brush {
+    /// Solid color brush.
     Solid(RGBA),
+    /// Gradient brush.
     Gradient(Gradient),
-    Texture(Arc<Image<T>>),
+    /// Image brush.
+    Old(),
+    /// GPU texture brush.
+    Image(Image),
 }
 
 #[derive(Debug, Clone)]
-pub struct Image<T> {
-    pub data: T,
+pub struct Image {
+    /// The peniko::Image
+    pub image: vello::peniko::Image,
+    /// The texture data.
+    pub gpu_texture: Option<Arc<wgpu::Texture>>,
+    /// The width of the texture.
     pub width: u32,
+    /// The height of the texture.
     pub height: u32,
 }
 

@@ -12,7 +12,6 @@ pub mod vello_backend;
 pub use image;
 
 pub type VelloScene = scenes::Scene<vello_backend::VelloBackend>;
-pub type VelloImage = brushes::Image<vello::peniko::Image>;
 
 pub mod prelude {
     pub use super::affine::*;
