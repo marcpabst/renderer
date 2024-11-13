@@ -41,9 +41,17 @@ pub type Dashes = Vec<[f64; 4]>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ImageFitMode {
+    // Original size of the image buffer.
     Original,
+    // Stretch the image to fill the shape.
     Fill,
+    // Use exact width and height.
+    Exact {
+        width: f64,
+        height: f64,
+    },
 }
+
 
 #[derive(Debug, Clone, Copy)]
 pub enum MixMode {

@@ -16,13 +16,16 @@ pub struct Geom<S: Shape> {
 
 pub trait GeomTrait {
     fn new_image(
-        image: Image,
-        x: f64,
-        y: f64,
-        width: f64,
-        height: f64,
-        transform: Affine,
-        fit_mode: ImageFitMode,
+        image: Image, // the image to render
+        x: f64, // top left x coordinate of the image geom
+        y: f64, // top left y coordinate of the image geom
+        width: f64, // width of the image geom
+        height: f64, // height of the image geom
+        transform: Affine, // transformation of the image geom
+        image_x: f64, // x offset of the image
+        image_y: f64, // y offset of the image
+        fit_mode: ImageFitMode, // how to fit the image
+        edge_mode: crate::brushes::Extend,  // how to handle edges
     ) -> Geom<Rectangle> {
         let shape = Rectangle {
             a: Point {
@@ -35,19 +38,33 @@ pub trait GeomTrait {
             },
         };
 
+
         let org_width = image.width as f64;
         let org_height = image.height as f64;
 
-        let brush = Brush::Image(image);
+        let brush = Brush::Image{
+            image,
+            x: image_x,
+            y: image_y,
+            fit_mode,
+            edge_mode,
+        };
 
         let brush_transform = match fit_mode {
             ImageFitMode::Original => None,
-            ImageFitMode::Fill => Some(Affine::scale_xy(width / org_width, height / org_height)),
+            ImageFitMode::Fill => Some(Affine::scale_xy(width / org_width, height / org_height)
+                * Affine::translate(x - width / 2.0, y - height / 2.0)),
+            ImageFitMode::Exact { width: new_width, height: new_height } => {
+                Some(Affine::scale_xy(new_width / org_width, new_height / org_height))
+            }
         };
 
         // Center the brush.
-        let brush_transform =
-            brush_transform.map(|t| t * Affine::translate(x - width / 2.0, y - height / 2.0));
+        // let brush_transform =
+        //     brush_transform.map(|t| t * Affine::translate(x - width / 2.0, y - height / 2.0));
+
+        // Apple image_x and image_y.
+        let brush_transform = brush_transform.map(|t| t * Affine::translate(image_x, image_y));
 
         Geom {
             style: Style::Fill(FillStyle::NonZero),

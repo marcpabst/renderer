@@ -115,17 +115,10 @@ impl Image {
     pub fn new(image: &image::DynamicImage) -> Self {
         // create a peniko image
         let data = Arc::new(image.clone().into_rgba8().into_vec());
-        let blob = vello::peniko::Blob::new(data);
-        let peniko_image = vello::peniko::Image::new(
-            blob,
-            vello::peniko::Format::Rgba8,
-            image.width(),
-            image.height(),
-        );
 
         return Self {
             gpu_texture: None,
-            image: peniko_image,
+            data,
             width: image.width(),
             height: image.height(),
         };
@@ -133,12 +126,12 @@ impl Image {
 
     /// Move the texture to the GPU.
     pub fn to_gpu(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        let image = &self.image;
+        let data = &self.data;
         // create a new wgpu texture
         let wgpu_tetxure = device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: image.width,
-                height: image.height,
+                width: self.width,
+                height: self.height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -160,15 +153,15 @@ impl Image {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            image.data.as_ref(),
+            data.as_ref(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * image.width),
-                rows_per_image: Some(image.height),
+                bytes_per_row: Some(4 * self.width),
+                rows_per_image: Some(self.height),
             },
             wgpu::Extent3d {
-                width: image.width,
-                height: image.height,
+                width: self.width,
+                height: self.height,
                 depth_or_array_layers: 1,
             },
         );
@@ -183,11 +176,14 @@ impl<S: IntoVelloShape + Shape> Drawable<VelloBackend> for Geom<S> {
 
         let brush_transform = self.brush_transform.map(|t| t.into());
 
-        // if brush is a Brush::GpuTexture, add the texture to the scene
-        if let Brush::Image(texture) = &self.brush {
-            if let Some(gpu_texture) = &texture.gpu_texture {
+        // convert the brush
+        let new_brush = &self.brush.as_brush_or_brushref();
+
+        // if brush is an image
+        if let Brush::Image {image,..} = &self.brush {
+            if let Some(gpu_texture) = &image.gpu_texture {
                 scene.backend.gpu_images.push((
-                    texture.image.clone(),
+                    new_brush.clone().try_into().unwrap(),
                     wgpu::ImageCopyTextureBase {
                         texture: gpu_texture.clone(),
                         mip_level: 0,
@@ -198,9 +194,6 @@ impl<S: IntoVelloShape + Shape> Drawable<VelloBackend> for Geom<S> {
             }
         }
 
-        // convert the brush
-        let brush = self.brush.as_brush_or_brushref();
-
         let shape = &self.shape.clone().into_vello_shape();
         // match the style (stroke or fill)
 
@@ -210,7 +203,7 @@ impl<S: IntoVelloShape + Shape> Drawable<VelloBackend> for Geom<S> {
                 scene.backend.vello_scene.fill(
                     style.into(),
                     transform,
-                    &brush,
+                    new_brush,
                     brush_transform,
                     &shape,
                 );
@@ -294,11 +287,16 @@ impl From<FillStyle> for vello::peniko::Fill {
 impl<'a> Brush {
     fn as_brush_or_brushref(&'a self) -> VelloBrushOrBrushRef<'a> {
         match self {
-            Brush::Old() => {
-                todo!("Handle images")
-            }
-            Brush::Image(texture) => {
-                VelloBrushOrBrushRef::Brush(vello::peniko::Brush::Image(texture.image.clone()))
+            Brush::Image{image, fit_mode, edge_mode, x, y} => {
+                // note that offsets and fit mode are already applied when the geom is created and part
+                // of the brush transform
+
+                // create peniko::Image
+                let blob = vello::peniko::Blob::new(image.data.clone());
+                let image = vello::peniko::Image::new(blob, vello::peniko::Format::Rgba8, image.width, image.height);
+                let image = image.with_extend(edge_mode.into());
+
+                VelloBrushOrBrushRef::Brush(vello::peniko::Brush::Image(image))
             }
             Brush::Solid(rgba) => {
                 VelloBrushOrBrushRef::Brush(vello::peniko::Brush::Solid(rgba.clone().into()))
@@ -324,6 +322,18 @@ impl<'a> From<&'a VelloBrushOrBrushRef<'a>> for vello::peniko::BrushRef<'a> {
         match brush {
             VelloBrushOrBrushRef::BrushRef(brush_ref) => brush_ref.clone(),
             VelloBrushOrBrushRef::Brush(brush) => brush.into(),
+        }
+    }
+}
+
+// allow to get peniko::Image from VelloBrushOrBrushRef
+impl<'a> TryFrom<&'a VelloBrushOrBrushRef<'a>> for vello::peniko::Image {
+    type Error = &'static str;
+
+    fn try_from(brush: &'a VelloBrushOrBrushRef<'a>) -> Result<Self, Self::Error> {
+        match brush {
+            VelloBrushOrBrushRef::Brush(vello::peniko::Brush::Image(image)) => Ok(image.clone()),
+            _ => Err("Not an image brush"),
         }
     }
 }
@@ -413,6 +423,16 @@ impl From<ColorStop> for vello::peniko::ColorStop {
 // Extend
 impl From<Extend> for vello::peniko::Extend {
     fn from(extend: Extend) -> Self {
+        match extend {
+            Extend::Pad => vello::peniko::Extend::Pad,
+            Extend::Repeat => vello::peniko::Extend::Repeat,
+            Extend::Reflect => vello::peniko::Extend::Reflect,
+        }
+    }
+}
+
+impl From<&Extend> for vello::peniko::Extend {
+    fn from(extend: &Extend) -> Self {
         match extend {
             Extend::Pad => vello::peniko::Extend::Pad,
             Extend::Repeat => vello::peniko::Extend::Repeat,

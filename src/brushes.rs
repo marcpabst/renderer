@@ -1,5 +1,5 @@
 use std::sync::Arc;
-
+use crate::styles::{ImageFitMode};
 use super::{colors::RGBA, shapes::Point};
 
 #[derive(Debug, Clone)]
@@ -8,21 +8,25 @@ pub enum Brush {
     Solid(RGBA),
     /// Gradient brush.
     Gradient(Gradient),
-    /// Image brush.
-    Old(),
     /// GPU texture brush.
-    Image(Image),
+    Image{
+        image: Image,
+        x: f64,
+        y: f64,
+        fit_mode: ImageFitMode,
+        edge_mode: Extend,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub struct Image {
-    /// The peniko::Image
-    pub image: vello::peniko::Image,
-    /// The texture data.
+    /// Data of the image.
+    pub data: Arc<Vec<u8>>,
+    /// Gpu buffer (if available).
     pub gpu_texture: Option<Arc<wgpu::Texture>>,
-    /// The width of the texture.
+    /// The width of the image.
     pub width: u32,
-    /// The height of the texture.
+    /// The height of the image.
     pub height: u32,
 }
 
