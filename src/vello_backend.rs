@@ -13,7 +13,7 @@ use crate::geoms::Geom;
 use crate::shapes::Shape;
 use crate::styles::{CompositeMode, FillStyle, MixMode, Style};
 use crate::{affine::Affine, scenes::Scene, Drawable};
-
+use crate::prerenderd_scene::PrerenderedScene;
 use super::brushes::{Gradient, GradientKind, Image};
 use super::scenes::SceneTrait;
 use super::text::{Alignment, FormatedText, VerticalAlignment};
@@ -582,43 +582,11 @@ fn vello_font_to_font_ref(font: &vello::peniko::Font) -> Option<vello::skrifa::F
     }
 }
 
-// #[derive(Clone)]
-// pub struct LottieFile {
-//     data: velato::Composition,
-//     renderer: Rc<RefCell<velato::Renderer>>,
-//     start_time: std::time::Instant,
-//     transform: Affine,
-// }
+impl Drawable<VelloBackend> for PrerenderedScene {
+    fn draw(&mut self, scene: &mut Scene<VelloBackend>) {
+        let transform = scene.backend.global_transform;
+        let transform = transform * self.transform;
 
-// impl LottieFile {
-//     pub fn new(filename: &str, transform: Affine) -> Self {
-//         // load file as string
-//         let v = std::fs::read_to_string(filename).expect("Failed to read file");
-//         let data = velato::Composition::from_str(&v).expect("Failed to parse file");
-//         let renderer = velato::Renderer::new();
-//         Self {
-//             data,
-//             renderer: Rc::new(RefCell::new(renderer)),
-//             start_time: std::time::Instant::now(),
-//             transform,
-//         }
-//     }
-// }
-
-// impl Drawable<VelloBackend> for LottieFile {
-//     fn draw(&mut self, scene: &mut Scene<VelloBackend>) {
-//         let animation = &self.data;
-//         let elapsed = self.start_time.elapsed().as_secs_f64();
-//         let frame = self.data.frame_rate * elapsed;
-
-//         let transform = (scene.backend.global_transform * self.transform).into();
-
-//         self.renderer.borrow_mut().append(
-//             animation,
-//             frame,
-//             transform,
-//             1.0,
-//             &mut scene.backend.vello_scene,
-//         );
-//     }
-// }
+        scene.backend.vello_scene.append(&mut self.scene, Some(transform.into()));
+    }
+}

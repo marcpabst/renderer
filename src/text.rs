@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::{affine::Affine, colors::RGBA, shapes::Point};
 
 /// A piece of formatted text.

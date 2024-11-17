@@ -19,11 +19,12 @@ itertools = "0.13.0"
 wgpu = { version = "22.0.0" }
 nalgebra = "0.33.0"
 vello = {git = "https://github.com/linebender/vello", rev = "9819261"}
+vello_svg = {git = "https://github.com/linebender/vello_svg", rev = "b9992cf"}
 
 
 [dev-dependencies]
 winit = "0.30.3"
 
 # # # patch for velato to use the same version of vello as this crate
-# [patch.crates-io]
-# vello = { git = "https://github.com/linebender/vello", rev = "a00cd9f" } # patch for velato to use the same version of vello as this crate
+[patch.crates-io]
+vello = { git = "https://github.com/linebender/vello", rev = "9819261" } # patch for velato to use the same version of vello as this crate
