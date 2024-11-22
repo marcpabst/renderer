@@ -22,6 +22,12 @@ impl Affine {
     }
 
     #[inline]
+    pub fn scale_xy_at(sx: f64, sy: f64, x: f64, y: f64) -> Affine {
+       // we need to translate the point to the origin, scale it, and then translate it back
+        Affine::translate(x, y) * Affine::scale_xy(sx, sy) * Affine::translate(-x, -y)
+    }
+
+    #[inline]
     pub const fn translate(x: f64, y: f64) -> Affine {
         Affine([1.0, 0.0, 0.0, 1.0, x, y])
     }

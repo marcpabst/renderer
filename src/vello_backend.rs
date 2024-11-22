@@ -500,7 +500,7 @@ impl VelloFont {
 impl Drawable<VelloBackend> for FormatedText<VelloFont> {
     fn draw(&mut self, scene: &mut Scene<VelloBackend>) {
         let transform: vello::kurbo::Affine =
-            (scene.backend.global_transform * self.transform).into();
+            (self.transform * scene.backend.global_transform).into();
 
         let font = &self.font.0;
         let font_size = vello::skrifa::instance::Size::new(self.size);
@@ -582,11 +582,11 @@ fn vello_font_to_font_ref(font: &vello::peniko::Font) -> Option<vello::skrifa::F
     }
 }
 
-impl Drawable<VelloBackend> for PrerenderedScene {
+impl Drawable<VelloBackend> for &PrerenderedScene {
     fn draw(&mut self, scene: &mut Scene<VelloBackend>) {
-        let transform = scene.backend.global_transform;
-        let transform = transform * self.transform;
+        let global_transform = scene.backend.global_transform;
+        let transform =  self.transform * global_transform;
 
-        scene.backend.vello_scene.append(&mut self.scene, Some(transform.into()));
+        scene.backend.vello_scene.append(&mut &self.scene, Some(transform.into()));
     }
 }
