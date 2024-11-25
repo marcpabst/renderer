@@ -3,7 +3,7 @@ use super::scenes::Scene;
 #[derive(Debug, Clone)]
 pub enum Style {
     Fill(FillStyle),
-    Stroke(StrokeStyle),
+    Stroke(StrokeOptions),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -13,7 +13,7 @@ pub enum FillStyle {
 }
 
 #[derive(Debug, Clone)]
-pub struct StrokeStyle {
+pub struct StrokeOptions {
     pub width: f64,
     pub join: Join,
     pub miter_limit: f64,
@@ -21,6 +21,20 @@ pub struct StrokeStyle {
     pub end_cap: Cap,
     pub dash_pattern: Dashes,
     pub dash_offset: f64,
+}
+
+impl StrokeOptions {
+    pub fn new(width: f64) -> Self {
+        Self {
+            width,
+            join: Join::Miter,
+            miter_limit: 4.0,
+            start_cap: Cap::Butt,
+            end_cap: Cap::Butt,
+            dash_pattern: vec![],
+            dash_offset: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

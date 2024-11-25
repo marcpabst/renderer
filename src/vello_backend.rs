@@ -11,7 +11,7 @@ use crate::brushes::Extend;
 
 use crate::geoms::Geom;
 use crate::shapes::Shape;
-use crate::styles::{CompositeMode, FillStyle, MixMode, Style};
+use crate::styles::{CompositeMode, FillStyle, MixMode, StrokeOptions, Style};
 use crate::{affine::Affine, scenes::Scene, Drawable};
 use crate::prerenderd_scene::PrerenderedScene;
 use super::brushes::{Gradient, GradientKind, Image};
@@ -197,7 +197,7 @@ impl<S: IntoVelloShape + Shape> Drawable<VelloBackend> for Geom<S> {
         let shape = &self.shape.clone().into_vello_shape();
         // match the style (stroke or fill)
 
-        match self.style {
+        match self.style.clone() {
             Style::Fill(style) => {
                 // fill the shape
                 scene.backend.vello_scene.fill(
@@ -208,8 +208,14 @@ impl<S: IntoVelloShape + Shape> Drawable<VelloBackend> for Geom<S> {
                     &shape,
                 );
             }
-            Style::Stroke(_) => {
-                todo!();
+            Style::Stroke(style) => {
+                scene.backend.vello_scene.stroke(
+                    &style.into(),
+                    transform,
+                    new_brush,
+                    brush_transform,
+                    &shape,
+                );
             }
         }
     }
@@ -279,6 +285,16 @@ impl From<FillStyle> for vello::peniko::Fill {
             FillStyle::NonZero => vello::peniko::Fill::NonZero,
 
             FillStyle::EvenOdd => vello::peniko::Fill::EvenOdd,
+        }
+    }
+}
+
+// StrokeStyle
+impl From<StrokeOptions> for vello::kurbo::Stroke {
+    fn from(style: StrokeOptions) -> Self {
+        vello::kurbo::Stroke {
+            width: style.width,
+            ..Default::default()
         }
     }
 }
