@@ -24,10 +24,12 @@ use super::{
     shapes::{Circle, Point, Rectangle, RoundedRectangle},
 };
 
-#[derive(Clone)]
+
 pub struct VelloBackend {
     /// The Vello scene.
     pub vello_scene: vello::Scene,
+    /// An optional wgpu render pipeline used for rendering.
+    pub render_pipeline: Option<wgpu::RenderPipeline>,
     /// The global transform.
     pub global_transform: Affine,
     /// array of
@@ -56,6 +58,7 @@ impl VelloRenderer {
         Self { renderer }
     }
 
+    /// Render the scene to a WGPU surface.
     pub fn render_to_surface(
         &mut self,
         device: &wgpu::Device,
@@ -77,6 +80,84 @@ impl VelloRenderer {
         }
         self.renderer
             .render_to_surface(device, queue, vello_scene, surface, &render_params);
+    }
+
+    /// Render the scene to a WGPU texture.
+    pub fn render_to_texture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        texture: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        scene: &Scene<VelloBackend>,
+    ) {
+        let vello_scene = &scene.backend.vello_scene;
+        let render_params = vello::RenderParams {
+            base_color: scene.background_color.into(),
+            width: width,
+            height: height,
+            antialiasing_method: vello::AaConfig::Msaa16,
+        };
+        // (interim) replace the images with GPU textures.
+        for (image, wgpu_texture) in &scene.backend.gpu_images {
+            self.renderer
+                .override_image(image, Some(wgpu_texture.clone()));
+        }
+        self.renderer
+            .render_to_texture(device, queue, vello_scene, texture, &render_params);
+    }
+
+    /// Render the scene to a WGPU surface but sets up its own render pass.
+    pub fn render_to_surface2(        &mut self,
+                                      device: &wgpu::Device,
+                                      queue: &wgpu::Queue,
+                                      surface: &wgpu::SurfaceTexture,
+                                      scene: &Scene<VelloBackend>
+    ) {
+        // create a new render pass
+
+    }
+
+    fn create_render_pipelie(&mut self, device: &wgpu::Device, format: wgpu::TextureFormat) {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Render Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("assets/shaders/render.wgsl").into()),
+        });
+
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Render Pipeline Layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: &"vs_main",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: &"fs_main",
+                compilation_options: Default::default(),
+                targets: &[Some(swapchain_format.into())],
+            }),
+            multiview: None,
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            cache: None,
+        });
+
+        self.render_pipeline = Some(render_pipeline);
     }
 }
 

@@ -8,6 +8,7 @@ pub mod styles;
 pub mod text;
 pub mod vello_backend;
 pub mod prerenderd_scene;
+pub mod effects;
 
 // re-export the image crate
 pub use image;
