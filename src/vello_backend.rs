@@ -1,22 +1,19 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::brushes::Extend;
 use image::GenericImageView;
 use vello::peniko::BlendMode;
 use vello::RendererOptions;
+use wgpu::util::DeviceExt;
 
-use crate::brushes::Extend;
-
-use crate::geoms::Geom;
-use crate::shapes::Shape;
-use crate::styles::{CompositeMode, FillStyle, MixMode, StrokeOptions, Style};
-use crate::{affine::Affine, scenes::Scene, Drawable};
-use crate::prerenderd_scene::PrerenderedScene;
 use super::brushes::{Gradient, GradientKind, Image};
 use super::scenes::SceneTrait;
 use super::text::{Alignment, FormatedText, VerticalAlignment};
+use crate::geoms::Geom;
+use crate::prerenderd_scene::PrerenderedScene;
+use crate::shapes::Shape;
+use crate::styles::{CompositeMode, FillStyle, MixMode, StrokeOptions, Style};
+use crate::{affine::Affine, scenes::Scene, Drawable};
 
 use super::{
     brushes::{Brush, ColorStop},
@@ -37,16 +34,30 @@ pub struct VelloBackend {
     )>,
 }
 
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct GammaParams {
+    bias: f32,
+    shift: f32,
+    scale: f32,
+    gamma: f32,
+}
+
 pub struct VelloRenderer {
     /// The vello renderer struct
     pub renderer: vello::Renderer,
     /// An optional wgpu render pipeline used for rendering the texture that vello produces
-    /// TODO: should probably make this non-optional
-    pub render_pipeline: Option<wgpu::RenderPipeline>,
+    pub render_pipeline: wgpu::RenderPipeline,
+    /// The texture that vello will render to
+    pub texture: wgpu::Texture,
+    /// Uniform buffer for gamma correction
+    pub gamma_buffer: wgpu::Buffer,
+    /// The bind group
+    pub bind_group: wgpu::BindGroup,
 }
 
 impl VelloRenderer {
-    pub fn new(device: &wgpu::Device, surface_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, surface_format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
         let renderer = vello::Renderer::new(
             &device,
             RendererOptions {
@@ -56,11 +67,29 @@ impl VelloRenderer {
                 num_init_threads: std::num::NonZeroUsize::new(1),
             },
         )
-        .unwrap();
+            .unwrap();
+
+
+        // create a render pipeline
+        let render_pipeline = Self::create_render_pipelie(width, height, device, surface_format);
+        let texture = Self::create_texture(device, width, height);
+        let gamma_buffer = Self::create_uniform_buffer(device);
+        let bind_group = Self::create_bind_group(device, &texture);
+
         Self {
             renderer,
-            render_pipeline: None,
+            render_pipeline,
+            texture,
+            gamma_buffer,
+            bind_group,
         }
+    }
+
+    /// Re-size the texture
+    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        self.texture = Self::create_texture(device, width, height);
+        self.bind_group = Self::create_bind_group(device, &self.texture);
+        println!("Resized texture to {}x{} with format {:?}", width, height, self.texture.format());
     }
 
     /// Render the scene to a WGPU surface.
@@ -97,6 +126,8 @@ impl VelloRenderer {
         height: u32,
         scene: &Scene<VelloBackend>,
     ) {
+        // print the texture format
+
         let vello_scene = &scene.backend.vello_scene;
         let render_params = vello::RenderParams {
             base_color: scene.background_color.into(),
@@ -104,35 +135,187 @@ impl VelloRenderer {
             height: height,
             antialiasing_method: vello::AaConfig::Msaa16,
         };
+
         // (interim) replace the images with GPU textures.
         for (image, wgpu_texture) in &scene.backend.gpu_images {
             self.renderer
                 .override_image(image, Some(wgpu_texture.clone()));
         }
         self.renderer
-            .render_to_texture(device, queue, vello_scene, texture, &render_params);
+            .render_to_texture(device, queue, vello_scene, texture, &render_params).expect("Failed to render to texture");
     }
 
     /// Render the scene to a WGPU surface but sets up its own render pass.
-    pub fn render_to_surface2(        &mut self,
-                                      device: &wgpu::Device,
-                                      queue: &wgpu::Queue,
-                                      surface: &wgpu::SurfaceTexture,
-                                      scene: &Scene<VelloBackend>
+    pub fn render_to_surface2(&mut self,
+                              device: &wgpu::Device,
+                              queue: &wgpu::Queue,
+                              surface: &wgpu::SurfaceTexture,
+                              scene: &Scene<VelloBackend>,
     ) {
-        // create a new render pass
+        // create texture view
+        let texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        // render the scene
+        self.render_to_texture(device, queue, &texture_view, surface.texture.width(), surface.texture.height(), scene);
+
+
+        // create a new render pass
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+
+        let surface_texture_view = surface.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+
+        {
+            // bind the render pass
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::RED),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // bind the render pipeline
+            render_pass.set_pipeline(&self.render_pipeline);
+            // bind the bind group
+            render_pass.set_bind_group(0, &self.bind_group, &[]);
+            // draw the quad
+            render_pass.draw(0..6, 0..1);
+        }
+
+        // submit the render pass
+        queue.submit(Some(encoder.finish()));
     }
 
-    fn create_render_pipelie(&mut self, device: &wgpu::Device, format: wgpu::TextureFormat) {
+    fn create_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
+        device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+            label: None,
+            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+        })
+    }
+
+    fn create_uniform_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Gamma Buffer"),
+            size: std::mem::size_of::<GammaParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn create_bind_group(device: &wgpu::Device, texture: &wgpu::Texture) -> wgpu::BindGroup {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Render Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Render Bind Group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture.create_view(&wgpu::TextureViewDescriptor::default())),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Gamma Buffer"),
+                            contents: bytemuck::cast_slice(&[GammaParams {
+                                bias: 0.0,
+                                shift: 0.89803,
+                                scale: 13.80822,
+                                gamma: 2.22824,
+                            }]),
+                            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                        }),
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
+        })
+    }
+
+    fn create_render_pipelie(width: u32, height: u32, device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Render Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("assets/shaders/render.wgsl").into()),
         });
 
+        // create a bind group layout for texture and sampler
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Render Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[],
+            bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -149,20 +332,21 @@ impl VelloRenderer {
                 module: &shader,
                 entry_point: &"fs_main",
                 compilation_options: Default::default(),
-                targets: &[None], // TODO: do I need to provide this?
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             multiview: None,
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
+            multisample: wgpu::MultisampleState::default(),
             cache: None,
         });
 
-        self.render_pipeline = Some(render_pipeline);
+
+        render_pipeline
     }
 }
 
@@ -267,7 +451,7 @@ impl<S: IntoVelloShape + Shape> Drawable<VelloBackend> for Geom<S> {
         let new_brush = &self.brush.as_brush_or_brushref();
 
         // if brush is an image
-        if let Brush::Image {image,..} = &self.brush {
+        if let Brush::Image { image, .. } = &self.brush {
             if let Some(gpu_texture) = &image.gpu_texture {
                 scene.backend.gpu_images.push((
                     new_brush.clone().try_into().unwrap(),
@@ -309,7 +493,7 @@ impl<S: IntoVelloShape + Shape> Drawable<VelloBackend> for Geom<S> {
 }
 
 impl<ClipShape: IntoVelloShape + Shape> SceneTrait<VelloBackend, ClipShape>
-    for Scene<VelloBackend>
+for Scene<VelloBackend>
 {
     fn scene_mut(&mut self) -> &mut Scene<VelloBackend> {
         self
@@ -390,7 +574,7 @@ impl From<StrokeOptions> for vello::kurbo::Stroke {
 impl<'a> Brush {
     fn as_brush_or_brushref(&'a self) -> VelloBrushOrBrushRef<'a> {
         match self {
-            Brush::Image{image, fit_mode, edge_mode, x, y} => {
+            Brush::Image { image, fit_mode, edge_mode, x, y } => {
                 // note that offsets and fit mode are already applied when the geom is created and part
                 // of the brush transform
 
@@ -688,7 +872,7 @@ fn vello_font_to_font_ref(font: &vello::peniko::Font) -> Option<vello::skrifa::F
 impl Drawable<VelloBackend> for &PrerenderedScene {
     fn draw(&mut self, scene: &mut Scene<VelloBackend>) {
         let global_transform = scene.backend.global_transform;
-        let transform =  self.transform * global_transform;
+        let transform = self.transform * global_transform;
 
         scene.backend.vello_scene.append(&mut &self.scene, Some(transform.into()));
     }

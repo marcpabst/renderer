@@ -1,8 +1,6 @@
 use crate::affine::Affine;
-use crate::Drawable;
-use crate::vello_backend::VelloBackend;
-use custom_debug::Debug;
 
+pub use custom_debug::Debug;
 pub use vello_svg::usvg::Tree;
 
 #[derive(Clone, Debug)]
@@ -21,14 +19,13 @@ impl PrerenderedScene {
         Self { scene, width, height, transform }
     }
 
-    pub fn from_svg_string(svg: & str, transform: Affine) -> Self {
+    pub fn from_svg_string(svg: &str, transform: Affine) -> Self {
         let tree = vello_svg::usvg::Tree::from_str(svg, &Default::default()).unwrap();
         let scene = vello_svg::render_tree(&tree);
         Self::new(scene, tree.size().width() as f64, tree.size().height() as f64, transform)
     }
-    
+
     pub fn set_transform(&mut self, transform: Affine) {
         self.transform = transform;
     }
-
 }
