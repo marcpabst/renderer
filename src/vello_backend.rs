@@ -28,8 +28,6 @@ use super::{
 pub struct VelloBackend {
     /// The Vello scene.
     pub vello_scene: vello::Scene,
-    /// An optional wgpu render pipeline used for rendering.
-    pub render_pipeline: Option<wgpu::RenderPipeline>,
     /// The global transform.
     pub global_transform: Affine,
     /// array of
@@ -40,7 +38,11 @@ pub struct VelloBackend {
 }
 
 pub struct VelloRenderer {
+    /// The vello renderer struct
     pub renderer: vello::Renderer,
+    /// An optional wgpu render pipeline used for rendering the texture that vello produces
+    /// TODO: should probably make this non-optional
+    pub render_pipeline: Option<wgpu::RenderPipeline>,
 }
 
 impl VelloRenderer {
@@ -55,7 +57,10 @@ impl VelloRenderer {
             },
         )
         .unwrap();
-        Self { renderer }
+        Self {
+            renderer,
+            render_pipeline: None,
+        }
     }
 
     /// Render the scene to a WGPU surface.
@@ -144,7 +149,7 @@ impl VelloRenderer {
                 module: &shader,
                 entry_point: &"fs_main",
                 compilation_options: Default::default(),
-                targets: &[Some(swapchain_format.into())],
+                targets: &[None], // TODO: do I need to provide this?
             }),
             multiview: None,
             primitive: wgpu::PrimitiveState::default(),
@@ -168,6 +173,7 @@ impl VelloBackend {
             vello_scene: vello::Scene::new(),
             global_transform: Affine::translate(width as f64 / 2.0, height as f64 / 2.0),
             gpu_images: Vec::new(),
+
         }
     }
 }
