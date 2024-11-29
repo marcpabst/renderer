@@ -37,6 +37,7 @@ pub struct VelloBackend {
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct GammaParams {
+    correction: u32,
     bias: f32,
     shift: f32,
     scale: f32,
@@ -264,6 +265,7 @@ impl VelloRenderer {
                         buffer: &device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: Some("Gamma Buffer"),
                             contents: bytemuck::cast_slice(&[GammaParams {
+                                correction: 0, // 0 = no correction, 1 = gamma correction
                                 bias: 0.0,
                                 shift: 0.89803,
                                 scale: 13.80822,

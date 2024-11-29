@@ -1,4 +1,5 @@
 struct Params {
+    correction: u32, // 0: None, 1: sRGB
     bias: f32,
     shift: f32,
     scale: f32,
@@ -44,7 +45,11 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 
     let rgb_pm = vec3(rgba_sep.rgb * rgba_sep.a);
 
-    // Convert the linear RGB to sRGB for every pixel
+    if params.correction == 0 {
+        return vec4(rgb_pm, rgba_sep.a);
+    }
+
+     // Convert the linear RGB to sRGB for every pixel
     let rgb = vec3(
         scaled_inv_srgb_eotf(rgb_pm.r, params),
         scaled_inv_srgb_eotf(rgb_pm.g, params),
