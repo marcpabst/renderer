@@ -1,15 +1,41 @@
 struct Params {
-    correction: u32, // 0: None, 1: sRGB
-    bias: f32,
-    shift: f32,
-    scale: f32,
-    gamma: f32,
+    ps: array<P, 3>,
+    correction: u32, // 0: none, 1: psychopy, 2: polylog4, 3: polylog5, 4: polylog6
 };
 
-fn scaled_inv_srgb_eotf(value: f32, params: Params) -> f32 {
-    return (pow(( (1.0 - value) * pow(params.shift, params.gamma) + value * pow((params.shift + params.scale), params.gamma)), (1/params.gamma)) - params.shift) / params.scale;
+struct P {
+    a: f32,
+    b: f32,
+    c: f32,
+    d: f32,
+    e: f32,
+    f: f32,
+    g: f32,
+    h: f32,
+};
+
+fn npow(x: f32, n: f32) -> f32 {
+    return sign(x) * pow(abs(x), n);
 }
 
+fn psychopy_scaled_inv_eotf(value: f32, params: P) -> f32 {
+    return (npow(( (1.0 - value) * npow(params.a, params.c) + value * npow((params.a + params[2]), params.c)), (1/params.c)) - params.a) / params[2];
+}
+
+fn polylog4(x: f32, params: P) -> f32 {
+    let logx = log(x);
+    return params.a + params.b * logx + params.c * npow(logx, 2.0) + params.d * npow(logx, 3.0) + params.e * npow(logx, 4.0);
+}
+
+fn polylog5(x: f32, params: P) -> f32 {
+    let logx = log(x+0.001);
+    return params.a + params.b * logx + params.c * npow(logx, 2.0) + params.d * npow(logx, 3.0) + params.e * npow(logx, 4.0) + params.f * npow(logx, 5.0);
+}
+
+fn polylog6(x: f32, params: P) -> f32 {
+    let logx = log(x);
+    return params.a + params.b * logx + params.c * npow(logx, 2.0) + params.d * npow(logx, 3.0) + params.e * npow(logx, 4.0) + params.f * npow(logx, 5.0) + params.g * npow(logx, 6.0);
+}
 
 @vertex
 fn vs_main(@builtin(vertex_index) ix: u32) -> @builtin(position) vec4<f32> {
@@ -42,19 +68,49 @@ var<uniform> params: Params;
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let rgba_sep = textureLoad(fine_output, vec2<i32>(pos.xy), 0);
-
     let rgb_pm = vec3(rgba_sep.rgb * rgba_sep.a);
 
     if params.correction == 0 {
-        return vec4(rgb_pm, rgba_sep.a);
+        let rgb = vec3(
+            rgb_pm.r,
+            rgb_pm.g,
+            rgb_pm.b
+        );
+        return vec4(rgb, rgba_sep.a);
+    }
+    else if params.correction == 1 {
+        let rgb = vec3(
+            psychopy_scaled_inv_eotf(rgb_pm.r, params.ps[0]),
+            psychopy_scaled_inv_eotf(rgb_pm.g, params.ps[1]),
+            psychopy_scaled_inv_eotf(rgb_pm.b, params.ps[2])
+        );
+        return vec4(rgb, rgba_sep.a);
+    }
+    else if params.correction == 2 {
+        let rgb = vec3(
+            polylog4(rgb_pm.r, params.ps[0]),
+            polylog4(rgb_pm.g, params.ps[1]),
+            polylog4(rgb_pm.b, params.ps[2])
+        );
+        return vec4(rgb, rgba_sep.a);
+    }
+    else if params.correction == 3 {
+        let rgb = vec3(
+            polylog5(rgb_pm.r, params.ps[0]),
+            polylog5(rgb_pm.g,  params.ps[1]),
+            polylog5(rgb_pm.b, params.ps[2])
+        );
+        return vec4(rgb, rgba_sep.a);
+    }
+    else if params.correction == 4 {
+        let rgb = vec3(
+            polylog6(rgb_pm.r, params.ps[0]),
+            polylog6(rgb_pm.g, params.ps[1]),
+            polylog6(rgb_pm.b, params.ps[2])
+        );
+        return vec4(rgb, rgba_sep.a);
     }
 
-     // Convert the linear RGB to sRGB for every pixel
-    let rgb = vec3(
-        scaled_inv_srgb_eotf(rgb_pm.r, params),
-        scaled_inv_srgb_eotf(rgb_pm.g, params),
-        scaled_inv_srgb_eotf(rgb_pm.b, params)
-    );
 
-    return vec4(rgb, rgba_sep.a);
+    return vec4(rgb_pm, rgba_sep.a);
 }
