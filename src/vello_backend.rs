@@ -89,7 +89,6 @@ impl VelloRenderer {
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         self.texture = Self::create_texture(device, width, height);
         self.bind_group = Self::create_bind_group(device, &self.texture);
-        println!("Resized texture to {}x{} with format {:?}", width, height, self.texture.format());
     }
 
     /// Render the scene to a WGPU surface.

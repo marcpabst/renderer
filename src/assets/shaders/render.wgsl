@@ -1,5 +1,7 @@
 struct Params {
-    ps: array<P, 3>,
+    r: P,
+    g: P,
+    b: P,
     correction: u32, // 0: none, 1: psychopy, 2: polylog4, 3: polylog5, 4: polylog6
 };
 
@@ -31,9 +33,22 @@ fn polylog4(x: f32, params: P) -> f32 {
     return params.a + params.b * logx + params.c * npow(logx, 2.0) + params.d * npow(logx, 3.0) + params.e * npow(logx, 4.0);
 }
 
+fn polylog4_horner(x: f32, params: P) -> f32 {
+    // use Horner's method to evaluate the polynomial
+    let logx = log(x);
+    return params.a + logx * (params.b + logx * (params.c + logx * (params.d + logx * params.e)));
+}
+
 fn polylog5(x: f32, params: P) -> f32 {
-    let logx = log(x+0.001);
-    return params.a + params.b * logx + params.c * npow(logx, 2.0) + params.d * npow(logx, 3.0) + params.e * npow(logx, 4.0) + params.f * npow(logx, 5.0);
+    let logx = log(x);
+    let out = params.a + params.b * logx + params.c * npow(logx, 2.0) + params.d * npow(logx, 3.0) + params.e * npow(logx, 4.0) + params.f * npow(logx, 5.0);
+    return out;
+}
+
+fn polylog5_horner(x: f32, params: P) -> f32 {
+    // use Horner's method to evaluate the polynomial
+    let logx = log(x);
+    return params.a + logx * (params.b + logx * (params.c + logx * (params.d + logx * (params.e + logx * params.f))));
 }
 
 fn polylog6(x: f32, params: P) -> f32 {
@@ -84,33 +99,33 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     }
     else if params.correction == 1 {
         let rgb = vec3(
-            psychopy_scaled_inv_eotf(rgb_pm.r, params.ps[0]),
-            psychopy_scaled_inv_eotf(rgb_pm.g, params.ps[1]),
-            psychopy_scaled_inv_eotf(rgb_pm.b, params.ps[2])
+            psychopy_scaled_inv_eotf(rgb_pm.r, params.r),
+            psychopy_scaled_inv_eotf(rgb_pm.g, params.g),
+            psychopy_scaled_inv_eotf(rgb_pm.b, params.b)
         );
         return vec4(rgb, rgba_sep.a);
     }
     else if params.correction == 2 {
         let rgb = vec3(
-            polylog4(rgb_pm.r, params.ps[0]),
-            polylog4(rgb_pm.g, params.ps[1]),
-            polylog4(rgb_pm.b, params.ps[2])
+            polylog4(rgb_pm.r, params.b),
+            polylog4(rgb_pm.g, params.g),
+            polylog4(rgb_pm.b, params.b)
         );
         return vec4(rgb, rgba_sep.a);
     }
     else if params.correction == 3 {
         let rgb = vec3(
-            polylog5(rgb_pm.r, params.ps[0]),
-            polylog5(rgb_pm.g,  params.ps[1]),
-            polylog5(rgb_pm.b, params.ps[2])
+            polylog5_horner(rgb_pm.r, params.b),
+            polylog5_horner(rgb_pm.g, params.g),
+            polylog5_horner(rgb_pm.b, params.b)
         );
         return vec4(rgb, rgba_sep.a);
     }
     else if params.correction == 4 {
         let rgb = vec3(
-            polylog6(rgb_pm.r, params.ps[0]),
-            polylog6(rgb_pm.g, params.ps[1]),
-            polylog6(rgb_pm.b, params.ps[2])
+            polylog6(rgb_pm.r, params.b),
+            polylog6(rgb_pm.g, params.g),
+            polylog6(rgb_pm.b, params.b)
         );
         return vec4(rgb, rgba_sep.a);
     }
