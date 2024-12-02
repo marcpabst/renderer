@@ -18,6 +18,10 @@ fn npow(x: f32, n: f32) -> f32 {
     return sign(x) * pow(abs(x), n);
 }
 
+fn pure_gamma_inv_eotf(value: f32, params: P) -> f32 {
+    return npow(value, params.c);
+}
+
 fn psychopy_scaled_inv_eotf(value: f32, params: P) -> f32 {
     return (npow(( (1.0 - value) * npow(params.a, params.c) + value * npow((params.a + params[2]), params.c)), (1/params.c)) - params.a) / params[2];
 }
